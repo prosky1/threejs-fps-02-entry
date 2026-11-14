@@ -58,6 +58,29 @@ export function createAudio() {
     osc.stop(t + duration + 0.05);
   }
 
+  let ambientOn = false;
+  function startAmbient() {
+    if (!ctx || ambientOn || ctx.state !== 'running') return;
+    ambientOn = true;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 320;
+    const g = ctx.createGain();
+    g.gain.value = 0.035;
+    // A slow swell so the wind breathes instead of sitting flat.
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.07;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.02;
+    lfo.connect(lfoGain).connect(g.gain);
+    src.connect(filter).connect(g).connect(master);
+    src.start();
+    lfo.start();
+  }
+
   const SHOTS = {
     pistol: { filterFreq: 2400, duration: 0.12, gain: 0.5, thump: 140 },
     smg: { filterFreq: 3000, duration: 0.09, gain: 0.4, thump: 170 },
@@ -69,7 +92,11 @@ export function createAudio() {
     unlock() {
       ensure();
       if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+      startAmbient();
     },
+    // A quiet dusk wind: a looped, low-passed noise bed with a slow swell.
+    // Starts on the first user gesture; nothing plays before it.
+    ambient() { startAmbient(); },
     shot(kind, distance = 0) {
       if (!ensure()) return;
       const s = SHOTS[kind] ?? SHOTS.rifle;

@@ -74,7 +74,9 @@ export function createAutopilot(state) {
 export function runShot(name, api) {
   const STEP = 1 / 60;
   if (name === 'start') {
-    api.pose(-24, 10, -0.5, -0.08);
+    // Face north-west so the setting sun sits beside the menu panel, not
+    // behind it: sky, sun glow and the yard in one frame.
+    api.pose(-24, 10, 0.2, 0.1);
     api.showOverlay('start');
   } else if (name === 'buy') {
     api.startMatch();
@@ -83,7 +85,11 @@ export function runShot(name, api) {
   } else if (name === 'play') {
     api.startMatch();
     api.skipFreeze();
-    for (let i = 0; i < 60 * 9; i += 1) api.stepFixed(STEP, true);
+    // 10s of autopilot: the player reaches mid / Site A and fights the
+    // defenders holding it, so the frame has enemies, tracers and the site.
+    // (14s let the pistol-armed autopilot walk into a crossfire and die.)
+    for (let i = 0; i < 60 * 10; i += 1) api.stepFixed(STEP, true);
+    api.coolFlash();
     api.syncAll();
     api.hideBanner();
   } else if (name === 'end') {
@@ -96,6 +102,7 @@ export function runShot(name, api) {
       guard += 1;
     }
     for (let i = 0; i < 60; i += 1) api.stepFixed(STEP, false);
+    api.coolFlash();
     api.syncAll();
     api.hideBanner();
     api.showScoreboard();

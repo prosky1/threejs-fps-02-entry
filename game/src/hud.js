@@ -48,6 +48,7 @@ export function createHud() {
   const mctx = minimap ? minimap.getContext('2d') : null;
   let lastFeedLen = 0;
   let hitTimer = 0;
+  let hitDirTimer = 0;
 
   return {
     setHealth(hp, armor) {
@@ -142,10 +143,18 @@ export function createHud() {
     },
     setHint(text) { setText('hint', text); },
     setVignette(on) { el('vignette').classList.toggle('on', on); },
+    // Red arc at the screen edge pointing toward the shooter who just hit you.
+    setHitDir(deg) {
+      const node = el('hitdir');
+      node.style.transform = `translate(-50%, -50%) rotate(${deg}deg)`;
+      node.classList.add('on');
+      clearTimeout(hitDirTimer);
+      hitDirTimer = setTimeout(() => node.classList.remove('on'), 650);
+    },
     setSpectate(name) {
       const node = el('spectate');
       node.hidden = !name;
-      if (name) setText('spectate-name', `Spectating ${name}`);
+      if (name) setText('spectate-name', name);
     },
     showBuy(money) {
       el('buy-menu').hidden = false;
@@ -158,10 +167,11 @@ export function createHud() {
       node.hidden = false;
       const rows = [...state.players]
         .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths)
-        .map((p) => `<tr class="${p.team}"><td>${p.name}${p.hasBomb ? ' ●' : ''}</td><td>${p.kills}</td><td>${p.deaths}</td><td>$${p.money}</td></tr>`)
+        .map((p) => `<tr class="${p.team}"><td>${p.name}${p.hasBomb ? ' ●' : ''}</td><td>${p.kills}</td><td>${p.deaths}</td><td>${Math.round(p.dmg)}</td><td>$${p.money}</td></tr>`)
         .join('');
       el('score-rows').innerHTML = rows;
-      setText('score-title', `DEPOT 9 — Round ${state.round} · Vanguard ${state.wins.vanguard} : ${state.wins.sentinel} Sentinel`);
+      const mvp = [...state.players].sort((a, b) => b.kills - a.kills || b.dmg - a.dmg)[0];
+      setText('score-title', `DEPOT 9 — Round ${state.round} · Vanguard ${state.wins.vanguard} : ${state.wins.sentinel} Sentinel · MVP ${mvp.name} (${mvp.kills}K)`);
     },
     hideScoreboard() { el('scoreboard').hidden = true; },
     showOverlay(kind, data = {}) {

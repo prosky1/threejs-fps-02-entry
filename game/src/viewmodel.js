@@ -6,44 +6,113 @@ import * as THREE from 'three';
 const TRACER_POOL = 24;
 const SPARK_POOL = 120;
 
-export function createViewmodel(camera) {
-  const group = new THREE.Group();
+// One viewmodel per weapon: the pistol is a short slide, the SMG a compact
+// box with a foregrip, the rifle a long body with a scope, the marksman a
+// long barrel with a big scope and a folded bipod. The active gun is the only
+// one visible; the muzzle flash is shared and moves to the active muzzle.
+function makeGun(id) {
   const dark = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.4, metalness: 0.65 });
   const grip = new THREE.MeshStandardMaterial({ color: 0x3a2f26, roughness: 0.85 });
   const accent = new THREE.MeshStandardMaterial({ color: 0xf0a830, roughness: 0.5, metalness: 0.4 });
+  const g = new THREE.Group();
+  const box = (w, h, d, mat, x, y, z, rx = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.rotation.x = rx;
+    g.add(m);
+    return m;
+  };
+  const tube = (r, len, mat, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 8), mat);
+    m.rotation.x = Math.PI / 2;
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
+  };
+  let muzzle = -0.5;
+  if (id === 'pistol') {
+    box(0.055, 0.07, 0.26, dark, 0, 0.01, -0.05);
+    box(0.05, 0.14, 0.07, grip, 0, -0.09, 0.08, 0.25);
+    tube(0.02, 0.1, dark, 0, 0.015, -0.2);
+    box(0.02, 0.03, 0.02, dark, 0, 0.055, -0.16);
+    box(0.058, 0.012, 0.12, accent, 0, 0.048, -0.05);
+    muzzle = -0.26;
+  } else if (id === 'smg') {
+    box(0.08, 0.11, 0.34, dark, 0, 0, 0);
+    tube(0.02, 0.3, dark, 0, 0.015, -0.3);
+    box(0.06, 0.1, 0.07, grip, 0, -0.09, -0.12);
+    box(0.06, 0.2, 0.08, dark, 0, -0.14, 0.02, 0.1);
+    box(0.07, 0.1, 0.18, grip, 0, -0.01, 0.26);
+    box(0.03, 0.05, 0.1, dark, 0, 0.08, -0.02);
+    box(0.085, 0.018, 0.2, accent, 0, 0.04, -0.05);
+    muzzle = -0.48;
+  } else if (id === 'rifle') {
+    box(0.09, 0.13, 0.44, dark, 0, 0, 0);
+    box(0.08, 0.1, 0.3, dark, 0, 0, -0.28);
+    tube(0.022, 0.5, dark, 0, 0.015, -0.45);
+    tube(0.035, 0.22, dark, 0, 0.1, -0.08);
+    box(0.03, 0.05, 0.05, dark, 0, 0.06, -0.02);
+    box(0.03, 0.05, 0.05, dark, 0, 0.06, -0.14);
+    box(0.07, 0.18, 0.1, dark, 0, -0.14, -0.02, 0.12);
+    box(0.08, 0.11, 0.22, grip, 0, -0.01, 0.3);
+    box(0.02, 0.06, 0.02, dark, 0, 0.08, -0.5);
+    box(0.095, 0.02, 0.2, accent, 0, 0.045, -0.05);
+    muzzle = -0.72;
+  } else { // marksman
+    box(0.09, 0.12, 0.5, dark, 0, 0, 0);
+    tube(0.024, 0.7, dark, 0, 0.015, -0.58);
+    tube(0.05, 0.3, dark, 0, 0.12, -0.1);
+    box(0.03, 0.06, 0.05, dark, 0, 0.07, -0.02);
+    box(0.03, 0.06, 0.05, dark, 0, 0.07, -0.18);
+    box(0.05, 0.03, 0.1, dark, 0.075, 0.02, 0.12);
+    box(0.07, 0.14, 0.09, dark, 0, -0.12, -0.02, 0.1);
+    box(0.08, 0.12, 0.26, grip, 0, -0.01, 0.32);
+    const bipodL = box(0.02, 0.02, 0.22, dark, -0.05, -0.08, -0.35, 0.5);
+    bipodL.rotation.z = 0.5;
+    const bipodR = box(0.02, 0.02, 0.22, dark, 0.05, -0.08, -0.35, 0.5);
+    bipodR.rotation.z = -0.5;
+    box(0.095, 0.02, 0.2, accent, 0, 0.045, -0.05);
+    muzzle = -0.95;
+  }
+  return { group: g, muzzle };
+}
 
-  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, 0.42), dark);
-  receiver.position.set(0, 0, 0);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.42, 8), dark);
-  barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 0.015, -0.4);
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.11, 0.22), grip);
-  stock.position.set(0, -0.01, 0.28);
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.16, 0.1), dark);
-  mag.position.set(0, -0.13, -0.02);
-  mag.rotation.x = 0.12;
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, 0.12), dark);
-  sight.position.set(0, 0.09, -0.1);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.02, 0.2), accent);
-  stripe.position.set(0, 0.045, -0.05);
-  group.add(receiver, barrel, stock, mag, sight, stripe);
+export function createViewmodel(camera) {
+  const group = new THREE.Group();
+  const guns = {};
+  for (const id of ['pistol', 'smg', 'rifle', 'marksman']) {
+    const built = makeGun(id);
+    built.group.visible = id === 'pistol';
+    group.add(built.group);
+    guns[id] = built;
+  }
 
   const flashLight = new THREE.PointLight(0xffc266, 0, 9, 2);
-  flashLight.position.set(0, 0.02, -0.62);
+  flashLight.position.set(0, 0.02, -0.3);
   group.add(flashLight);
   const flashQuad = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.34, 0.34),
+    new THREE.PlaneGeometry(0.22, 0.22),
     new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
   );
-  flashQuad.position.set(0, 0.02, -0.64);
+  flashQuad.position.set(0, 0.02, -0.3);
   group.add(flashQuad);
 
   group.position.set(0.26, -0.24, -0.5);
   camera.add(group);
 
+  let current = 'pistol';
   const state = { bobT: 0, kick: 0, flash: 0, adsT: 0, reloadT: 0 };
   return {
     group,
+    setWeapon(id) {
+      if (!guns[id] || id === current) return;
+      guns[current].group.visible = false;
+      current = id;
+      guns[id].group.visible = true;
+      const mz = guns[id].muzzle;
+      flashLight.position.z = mz - 0.02;
+      flashQuad.position.z = mz - 0.04;
+    },
     kick(amount) {
       state.kick = Math.min(1, state.kick + amount);
       state.flash = 1;
@@ -66,7 +135,7 @@ export function createViewmodel(camera) {
       );
       group.rotation.x = state.kick * 0.09 + state.reloadT * 0.5;
       group.rotation.z = state.reloadT * 0.25;
-      flashLight.intensity = state.flash * 22;
+      flashLight.intensity = state.flash * 14;
       flashQuad.material.opacity = state.flash * 0.95;
       flashQuad.rotation.z = Math.random() * Math.PI;
     },

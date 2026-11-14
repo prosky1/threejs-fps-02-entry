@@ -28,7 +28,7 @@ export function createPlayer(id, name, team, isPlayer, spawn) {
     active: 'secondary',
     grenades: { frag: 0, smoke: 0 },
     money: GAME.startMoney,
-    kills: 0, deaths: 0, assists: 0,
+    kills: 0, deaths: 0, assists: 0, dmg: 0,
     hasBomb: false, planting: 0, defusing: 0,
     // Bot brain (unused for the human player).
     bot: isPlayer ? null : {
@@ -90,6 +90,8 @@ export function human(state) {
 export function applyDamage(state, victim, amount, part, attackerId) {
   if (!victim.alive) return null;
   let dmg = amount;
+  const attacker = attackerId ? playerById(state, attackerId) : null;
+  if (attacker) attacker.dmg += amount;
   if (victim.armor > 0) {
     const absorbed = Math.min(victim.armor, dmg * 0.5);
     victim.armor -= absorbed;
@@ -102,7 +104,6 @@ export function applyDamage(state, victim, amount, part, attackerId) {
     victim.alive = false;
     victim.deadT = state.time;
     victim.deaths += 1;
-    const attacker = attackerId ? playerById(state, attackerId) : null;
     if (attacker) {
       attacker.kills += 1;
       attacker.money = Math.min(GAME.maxMoney, attacker.money + GAME.killBonus);

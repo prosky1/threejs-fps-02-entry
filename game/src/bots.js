@@ -355,43 +355,150 @@ export function createBotSystem(state, world, rng) {
   };
 }
 
-// Bot bodies: capsule torso, head sphere, team visor band, held rifle box.
-export function createBotMesh(team) {
+// Bot bodies: a readable humanoid — legs that swing when walking, torso with
+// a team-coloured vest, arms holding a rifle, helmet + visor, backpack, and a
+// floating nameplate with a health bar so enemies read at a glance in a fight.
+export function createBotMesh(team, name) {
   const group = new THREE.Group();
   const bodyColor = team === 'vanguard' ? 0x2e4a5e : 0x5e4a2e;
-  const visorColor = team === 'vanguard' ? 0x4fc3f7 : 0xffb300;
-  const torso = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.34, 0.62, 4, 10),
-    new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.85 }),
-  );
-  torso.position.y = 1.02;
+  const accentColor = team === 'vanguard' ? 0x4fc3f7 : 0xffb300;
+  const cloth = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.85 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.45, metalness: 0.55 });
+  const accent = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.5, metalness: 0.3 });
+
+  // Legs: boxes pivoted at the hip so they can swing while walking.
+  const legGeo = new THREE.BoxGeometry(0.17, 0.78, 0.2);
+  legGeo.translate(0, -0.39, 0);
+  const legL = new THREE.Mesh(legGeo, cloth);
+  legL.position.set(-0.13, 0.78, 0);
+  const legR = new THREE.Mesh(legGeo, cloth);
+  legR.position.set(0.13, 0.78, 0);
+  legL.castShadow = true;
+  legR.castShadow = true;
+  group.add(legL, legR);
+  // Boots ride on the legs so they swing with them.
+  const bootGeo = new THREE.BoxGeometry(0.18, 0.1, 0.3);
+  const bootL = new THREE.Mesh(bootGeo, dark);
+  bootL.position.set(0, -0.74, 0.05);
+  const bootR = new THREE.Mesh(bootGeo, dark);
+  bootR.position.set(0, -0.74, 0.05);
+  legL.add(bootL);
+  legR.add(bootR);
+
+  // Torso + vest plate + backpack + shoulder pads.
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.34), cloth);
+  torso.position.y = 1.09;
   torso.castShadow = true;
   group.add(torso);
+  const vest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.42, 0.08), accent);
+  vest.position.set(0, 1.1, -0.2);
+  group.add(vest);
+  const pack = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.16), dark);
+  pack.position.set(0, 1.12, 0.24);
+  group.add(pack);
+  for (const sx of [-0.36, 0.36]) {
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.3), accent);
+    pad.position.set(sx, 1.38, 0);
+    group.add(pad);
+  }
+
+  // Arms angled forward to hold the rifle.
+  const armGeo = new THREE.BoxGeometry(0.13, 0.52, 0.14);
+  armGeo.translate(0, -0.26, 0);
+  const armL = new THREE.Mesh(armGeo, cloth);
+  armL.position.set(-0.36, 1.36, -0.05);
+  armL.rotation.x = -1.0;
+  const armR = new THREE.Mesh(armGeo, cloth);
+  armR.position.set(0.36, 1.36, -0.02);
+  armR.rotation.x = -1.15;
+  group.add(armL, armR);
+
+  // Head: helmet dome + brim + glowing visor slit.
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.23, 12, 10),
+    new THREE.SphereGeometry(0.21, 14, 10),
     new THREE.MeshStandardMaterial({ color: 0x3a3f45, roughness: 0.6, metalness: 0.3 }),
   );
-  head.position.y = 1.62;
+  head.position.y = 1.6;
   head.castShadow = true;
   group.add(head);
+  const helmet = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55),
+    new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.7, metalness: 0.2 }),
+  );
+  helmet.position.y = 1.62;
+  group.add(helmet);
   const visor = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, 0.09, 0.06),
-    new THREE.MeshBasicMaterial({ color: visorColor }),
+    new THREE.BoxGeometry(0.3, 0.07, 0.06),
+    new THREE.MeshBasicMaterial({ color: accentColor }),
   );
-  visor.position.set(0, 1.64, -0.19);
+  visor.position.set(0, 1.6, -0.19);
   group.add(visor);
-  const gun = new THREE.Mesh(
-    new THREE.BoxGeometry(0.09, 0.14, 0.85),
-    new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.4, metalness: 0.6 }),
-  );
-  gun.position.set(0.18, 1.22, -0.42);
-  gun.rotation.x = 0.06;
+
+  // Held rifle: receiver + barrel + magazine, angled slightly up.
+  const gun = new THREE.Group();
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.6), dark);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.4, 8), dark);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.02, -0.45);
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.09), dark);
+  mag.position.set(0, -0.13, -0.05);
+  mag.rotation.x = 0.15;
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.08), dark);
+  grip.position.set(0, -0.1, 0.2);
+  grip.rotation.x = 0.3;
+  gun.add(receiver, barrel, mag, grip);
+  gun.position.set(0.1, 1.18, -0.38);
+  gun.rotation.x = 0.05;
   group.add(gun);
-  const lamp = new THREE.Mesh(
-    new THREE.SphereGeometry(0.05, 6, 6),
-    new THREE.MeshBasicMaterial({ color: visorColor }),
+
+  // Muzzle flash: a small quad at the barrel tip, shown briefly per shot.
+  const flash = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.3, 0.3),
+    new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
   );
-  lamp.position.set(-0.2, 1.5, 0);
-  group.add(lamp);
+  flash.position.set(0.1, 1.2, -1.02);
+  group.add(flash);
+
+  // Nameplate: name + health bar sprite, drawn once and redrawn only when
+  // the health changes (tracked in userData).
+  const plateCanvas = document.createElement('canvas');
+  plateCanvas.width = 256;
+  plateCanvas.height = 64;
+  const plateTex = new THREE.CanvasTexture(plateCanvas);
+  plateTex.colorSpace = THREE.SRGBColorSpace;
+  const plate = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: plateTex, transparent: true, depthTest: false,
+  }));
+  plate.scale.set(1.7, 0.42, 1);
+  plate.position.y = 2.06;
+  plate.renderOrder = 4;
+  group.add(plate);
+  group.userData = {
+    legL, legR, bootL, bootR, flash, plate, plateCanvas, plateTex,
+    name: name ?? '', teamColor: team === 'vanguard' ? '#4fc3f7' : '#ffb300',
+    lastHp: -1, walkPhase: Math.random() * Math.PI * 2,
+  };
+  drawNameplate(group.userData, 100);
   return group;
 }
+
+// Redraw the nameplate canvas: name above a health bar (green -> red).
+export function drawNameplate(ud, hp) {
+  const g = ud.plateCanvas.getContext('2d');
+  g.clearRect(0, 0, 256, 64);
+  g.font = 'bold 26px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(0,0,0,0.55)';
+  g.fillRect(48, 2, 160, 32);
+  g.fillStyle = ud.teamColor;
+  g.fillText(ud.name, 128, 19);
+  const frac = Math.max(0, hp / 100);
+  g.fillStyle = 'rgba(0,0,0,0.55)';
+  g.fillRect(48, 40, 160, 12);
+  g.fillStyle = frac > 0.5 ? '#7ee787' : frac > 0.25 ? '#f0a830' : '#ff5252';
+  g.fillRect(50, 42, 156 * frac, 8);
+  ud.plateTex.needsUpdate = true;
+  ud.lastHp = hp;
+}
+

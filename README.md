@@ -24,6 +24,18 @@ hot loops), procedural WebAudio sound.
 Chrome. Click to deploy. `?shot=start|buy|play|end&seed=N` runs a
 deterministic capture mode (the game plays itself) for screenshots.
 
+**v3 (15 Nov 2026, push vs the 77.53% v2).** Dusk presentation overhaul:
+gradient sky dome + low sun + drifting clouds + skyline silhouettes, ACES
+tone mapping, warmer sun with a cool fill light, richer procedural textures
+(oil stains, cracks, rust streaks, rivets, stencilled containers), stacked
+containers, sandbag lines at the site entries, floodlight towers, warehouse
+signage + glowing windows, a watchtower platform, a parked truck, painted
+site letters on the ground. Bots are proper humanoids now (legs that swing,
+vest, helmet, backpack, held rifle, muzzle flash, nameplate + health bar).
+Four distinct first-person gun models (pistol / SMG / rifle / marksman).
+Hit-direction arc, radio chatter in the kill feed, damage column + MVP on
+the scoreboard, ambient wind audio. Screenshots re-taken from the new build.
+
 **Hand in.** `mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts` writes the
 game, screenshots and `dossier.json` to `out/`.
 

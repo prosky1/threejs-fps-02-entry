@@ -9,7 +9,8 @@ import { hasLineOfSight } from './collision.js';
 import { computeSpread, makeShotResult, resolveShot, stepWeapon, tryFire, tryReload, throwGrenade, stepGrenades } from './weapons.js';
 import { createPlayerController } from './player.js';
 import { createInput } from './input.js';
-import { createBotSystem, createBotMesh } from './bots.js';
+import { createBotSystem, createBotMesh, drawNameplate } from './bots.js';
+import { createSky } from './sky.js';
 import { resetRound, buyItem, stepRounds, stepInteract, plantBomb, defuseBomb } from './rounds.js';
 import { createAudio } from './audio.js';
 import { createHud } from './hud.js';
@@ -29,16 +30,21 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+// Filmic tone mapping: the dusk palette (warm sun, orange horizon) reads
+// richer and less flat than linear output, at no extra draw cost.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
 document.getElementById('game').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2b3038);
-scene.fog = new THREE.Fog(0x2b3038, 30, 95);
-const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.05, 200);
+scene.fog = new THREE.Fog(0x39323e, 30, 95);
+const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.05, 600);
 scene.add(camera);
 
 // --- World / state / systems -----------------------------------------------
 const world = buildMap(scene);
+const sky = createSky(scene);
 const state = createState(rng);
 const audio = createAudio();
 const hud = createHud();
@@ -53,7 +59,7 @@ const shotResult = makeShotResult();
 
 for (const p of state.players) {
   if (p.isPlayer) continue;
-  p.mesh = createBotMesh(p.team);
+  p.mesh = createBotMesh(p.team, p.name);
   scene.add(p.mesh);
 }
 const bombMesh = new THREE.Group();
@@ -79,6 +85,7 @@ let nextBeep = 0;
 let prevFiring = false;
 let minimapT = 0;
 let fov = 74;
+let lastWeaponId = 'pistol';
 
 // --- Map self-test: every waypoint edge must clear every wall ---------------
 (function selfTest() {
@@ -122,6 +129,16 @@ function damage(victim, amount, part, attacker) {
     shake = Math.min(1, shake + 0.35);
     hud.setVignette(true);
     setTimeout(() => hud.setVignette(false), 260);
+    // Hit-direction arc: rotate the red marker toward the shooter.
+    if (attacker) {
+      const dx = attacker.pos.x - me.pos.x;
+      const dz = attacker.pos.z - me.pos.z;
+      const worldAng = Math.atan2(-dx, -dz);
+      let rel = worldAng - me.yaw;
+      while (rel > Math.PI) rel -= Math.PI * 2;
+      while (rel < -Math.PI) rel += Math.PI * 2;
+      hud.setHitDir((rel * 180) / Math.PI);
+    }
   }
   if (result === 'dead' && victim.mesh) victim.mesh.rotation.x = -Math.PI / 2;
   return result;
@@ -163,6 +180,7 @@ const botCtx = {
     const aimErr = 0.011 * (2 - bot.bot.skill) * (1.7 - Math.min(1, bot.bot.aimTime / 1.4));
     const spread = computeSpread(def, 2.2, bot.crouch, false, w.bloom) + aimErr;
     fireBullet(bot, origin, dir, def, spread);
+    bot.flashT = 0.07;
     const dist = Math.hypot(me.pos.x - bot.pos.x, me.pos.z - bot.pos.z);
     audio.shot(def.sound, dist);
   },
@@ -261,17 +279,29 @@ function stepFixed(dt, useAutopilot = false) {
   }
 }
 
-// --- Events -> audio / banners -------------------------------------------------
+// --- Events -> audio / banners / radio chatter ---------------------------------
+function pushFeed(text, team) {
+  state.feed.push({ text, team: team ?? null, t: state.time });
+  if (state.feed.length > 6) state.feed.shift();
+}
+
 function drainEvents() {
   for (const e of state.events) {
-    if (e.kind === 'roundStart') hud.banner(`ROUND ${e.round}`, state.wins.vanguard + ' — ' + state.wins.sentinel, null);
-    else if (e.kind === 'live') hud.banner('GO', 'Eliminate the enemy or plant the charge', null);
+    if (e.kind === 'roundStart') {
+      hud.banner(`ROUND ${e.round}`, state.wins.vanguard + ' — ' + state.wins.sentinel, null);
+      pushFeed(`Round ${e.round} — ${state.wins.vanguard}:${state.wins.sentinel}`, null);
+    } else if (e.kind === 'live') hud.banner('GO', 'Eliminate the enemy or plant the charge', null);
     else if (e.kind === 'roundEnd') {
       hud.banner(e.winner === 'vanguard' ? 'VANGUARD WINS THE ROUND' : 'SENTINEL WINS THE ROUND', e.reason, e.winner);
       audio.roundEnd(e.winner === 'vanguard');
     } else if (e.kind === 'plant') {
       hud.banner('CHARGE PLANTED', `Site ${e.site} — ${GAME.bombTimer}s to detonation`, 'vanguard');
       audio.plant();
+      const planter = playerById(state, e.by);
+      if (planter) pushFeed(`${planter.name}: Charge planted at ${e.site} — hold it`, 'vanguard');
+    } else if (e.kind === 'defuseStart') {
+      const defuser = playerById(state, e.by);
+      if (defuser) pushFeed(`${defuser.name}: Defusing the charge!`, 'sentinel');
     } else if (e.kind === 'defuse') hud.banner('CHARGE DEFUSED', 'Sentinel holds the site', 'sentinel');
     else if (e.kind === 'explode') {
       audio.explosion();
@@ -326,19 +356,44 @@ function syncCamera() {
   }
 }
 
-function syncMeshes() {
+function syncMeshes(dt) {
   for (const p of state.players) {
     if (!p.mesh) continue;
+    const ud = p.mesh.userData;
     if (p.alive) {
       p.mesh.visible = true;
       p.mesh.position.set(p.pos.x, p.pos.y, p.pos.z);
       p.mesh.rotation.set(0, p.yaw, 0);
       p.mesh.scale.y = p.crouch ? 0.78 : 1;
-      if (p.flashT > 0) p.flashT -= 1 / 60;
+      // Walk cycle: legs swing while the bot is moving, boots follow.
+      const moving = p.bot && (p.bot.state === 'advance' || p.bot.state === 'seek' || p.bot.state === 'rotate');
+      if (moving) {
+        ud.walkPhase += dt * 9;
+        const swing = Math.sin(ud.walkPhase) * 0.5;
+        ud.legL.rotation.x = swing;
+        ud.legR.rotation.x = -swing;
+        p.mesh.position.y = Math.abs(Math.sin(ud.walkPhase)) * 0.05;
+      } else {
+        ud.legL.rotation.x *= 0.8;
+        ud.legR.rotation.x *= 0.8;
+      }
+      // Muzzle flash: shown briefly after the bot fires.
+      if (p.flashT > 0) {
+        p.flashT -= dt;
+        ud.flash.material.opacity = Math.max(0, p.flashT / 0.07) * 0.95;
+        ud.flash.rotation.z = Math.random() * Math.PI;
+      } else {
+        ud.flash.material.opacity = 0;
+      }
+      // Nameplate: redraw only when health changed; hide far away or when dead.
+      if (ud.lastHp !== Math.ceil(p.hp)) drawNameplate(ud, Math.ceil(p.hp));
+      const distMe = Math.hypot(p.pos.x - me.pos.x, p.pos.z - me.pos.z);
+      ud.plate.visible = distMe < 45;
     } else {
       // Fallen bodies sink away after a few seconds.
       if (state.time - p.deadT > 4) p.mesh.position.y -= 0.01;
       if (state.time - p.deadT > 6) p.mesh.visible = false;
+      ud.plate.visible = false;
     }
   }
   const bomb = state.bomb;
@@ -354,6 +409,11 @@ function syncMeshes() {
 
 function syncHud(dt) {
   const w = activeWeapon(me);
+  // Swap the first-person gun model when the active weapon changes.
+  if (w && w.id !== lastWeaponId) {
+    lastWeaponId = w.id;
+    viewmodel.setWeapon(w.id);
+  }
   const def = w ? WEAPONS[w.id] : null;
   hud.setHealth(me.hp, me.armor);
   hud.setAmmo(w ? w.mag : 0, w ? w.reserve : 0, def ? def.name : '—', !!(w && w.reloading > 0));
@@ -489,7 +549,8 @@ function frame(now) {
     if (accumulator > FIXED_STEP * 5) accumulator = 0;
     drainEvents();
     syncCamera();
-    syncMeshes();
+    syncMeshes(dt);
+    sky.update(dt);
     viewmodel.step(dt, controller.speed(), me.ads, me.grounded);
     effects.step(dt);
     syncHud(dt);
@@ -517,13 +578,20 @@ if (shotMode) {
     syncAll() {
       drainEvents();
       syncCamera();
-      syncMeshes();
+      syncMeshes(0.1);
       syncHud(0.1);
     },
     render() {
       syncCamera();
+      // Apply the viewmodel state once (muzzle flash, kick) — in capture
+      // mode the frame loop never runs, so without this a fired shot shows
+      // no flash in the screenshot.
+      viewmodel.step(0, 0, false, true);
       renderer.render(scene, camera);
     },
+    // Let a fired shot's flash decay before the frame freezes: at full
+    // strength it is a huge pale quad + a blown-out foreground in a still.
+    coolFlash() { viewmodel.step(0.055, 0, false, true); },
     pose(x, z, yaw, pitch) {
       me.pos.x = x;
       me.pos.z = z;
