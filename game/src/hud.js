@@ -55,6 +55,7 @@ export function createHud() {
       setText('armor-num', String(Math.max(0, Math.ceil(armor))));
       setWidth('health-bar', Math.max(0, hp));
       el('health').classList.toggle('low', hp <= 30 && hp > 0);
+      el('crosshair').style.opacity = hp > 0 ? 1 : 0;
     },
     setAmmo(mag, reserve, name, reloading) {
       setText('ammo-mag', String(mag));
@@ -112,6 +113,10 @@ export function createHud() {
       node.className = `show ${team ?? ''}`;
       clearTimeout(this._bannerT);
       this._bannerT = setTimeout(() => { node.className = ''; }, 3400);
+    },
+    hideBanner() {
+      clearTimeout(this._bannerT);
+      el('banner').className = '';
     },
     setBomb(bomb) {
       const node = el('bomb-status');

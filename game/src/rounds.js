@@ -87,16 +87,18 @@ export function buyItem(state, player, id) {
   return true;
 }
 
+// Bonuses are per TEAM: the loss streak advances once per round, not once
+// per player (an earlier version incremented inside the player loop, paying
+// later players on the losing team up to $3400 instead of $1900).
 function awardMoney(state, winner) {
+  const loser = winner === 'vanguard' ? 'sentinel' : 'vanguard';
+  state.lossStreak[winner] = 0;
+  state.lossStreak[loser] += 1;
+  const lossBonus = GAME.lossBonus
+    + Math.min(3, state.lossStreak[loser] - 1) * GAME.lossStreakBonus;
   for (const p of state.players) {
-    if (p.team === winner) {
-      p.money = Math.min(GAME.maxMoney, p.money + GAME.winBonus);
-      state.lossStreak[p.team] = 0;
-    } else {
-      state.lossStreak[p.team] += 1;
-      const bonus = GAME.lossBonus + Math.min(3, state.lossStreak[p.team] - 1) * GAME.lossStreakBonus;
-      p.money = Math.min(GAME.maxMoney, p.money + bonus);
-    }
+    const bonus = p.team === winner ? GAME.winBonus : lossBonus;
+    p.money = Math.min(GAME.maxMoney, p.money + bonus);
   }
 }
 

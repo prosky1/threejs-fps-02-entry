@@ -3,6 +3,7 @@
 // frame freezes and window.__shotReady is set for the screenshot script. These
 // are real renders of the game's own code, not composites.
 import { SITES } from './map.js';
+import { activeWeapon } from './state.js';
 
 // Autopilot: walk the player toward the assigned site, look at the nearest
 // visible enemy, fire in short bursts. Used only in ?shot=play/end captures.
@@ -58,13 +59,18 @@ export function createAutopilot(state) {
       lookX = Math.max(-60, Math.min(60, lookX));
       lookY = Math.max(-40, Math.min(40, lookY));
       if (Math.abs(dyaw) < 0.6) keys.add('KeyW');
-      return { keys, look: { x: lookX, y: lookY }, fire };
+      // Reload an empty mag instead of dry-firing (same as a human pressing R).
+      const w = activeWeapon(me);
+      const reload = !!(w && w.mag === 0 && w.reserve > 0 && !w.reloading);
+      return { keys, look: { x: lookX, y: lookY }, fire, reload };
     },
   };
 }
 
 // Runs the scripted capture. api: { startMatch, stepFixed, syncAll, render,
-// showBuy, showScoreboard, banner }. Calls window.__shotReady when done.
+// showBuy, showScoreboard, banner, hideBanner }. Calls window.__shotReady
+// when done. The banner is hidden for play/end frames: it is driven by wall
+// time, so in the frozen capture it would otherwise sit over the action.
 export function runShot(name, api) {
   const STEP = 1 / 60;
   if (name === 'start') {
@@ -79,6 +85,7 @@ export function runShot(name, api) {
     api.skipFreeze();
     for (let i = 0; i < 60 * 9; i += 1) api.stepFixed(STEP, true);
     api.syncAll();
+    api.hideBanner();
   } else if (name === 'end') {
     api.startMatch();
     api.skipFreeze();
@@ -90,6 +97,7 @@ export function runShot(name, api) {
     }
     for (let i = 0; i < 60; i += 1) api.stepFixed(STEP, false);
     api.syncAll();
+    api.hideBanner();
     api.showScoreboard();
   }
   api.render();

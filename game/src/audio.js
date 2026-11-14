@@ -6,11 +6,11 @@ export function createAudio() {
   let master = null;
   let noiseBuf = null;
 
+  // Returns true only while the context is actually running. Never calls
+  // resume() here: without a user gesture Chrome logs a warning on every call
+  // and the context stays suspended anyway; unlock() resumes after the click.
   function ensure() {
-    if (ctx) {
-      if (ctx.state === 'suspended') ctx.resume();
-      return true;
-    }
+    if (ctx) return ctx.state === 'running';
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
     } catch {
@@ -22,7 +22,7 @@ export function createAudio() {
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const data = noiseBuf.getChannelData(0);
     for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
-    return true;
+    return ctx.state === 'running';
   }
 
   function noise({ duration, filterFreq, type = 'lowpass', gain, when = 0, q = 1 }) {
@@ -66,7 +66,10 @@ export function createAudio() {
   };
 
   return {
-    unlock() { ensure(); },
+    unlock() {
+      ensure();
+      if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+    },
     shot(kind, distance = 0) {
       if (!ensure()) return;
       const s = SHOTS[kind] ?? SHOTS.rifle;

@@ -28,7 +28,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 document.getElementById('game').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -213,6 +213,10 @@ function stepFixed(dt, useAutopilot = false) {
     } else {
       controller.look(drive.look.x, drive.look.y);
       if (drive.fire && state.phase === 'live') playerShoot();
+      if (drive.reload) {
+        const rw = activeWeapon(me);
+        if (rw) tryReload(rw, WEAPONS[rw.id]);
+      }
     }
     controller.step(dt, drive.keys, (crouch) => audio.step(crouch));
     const w = activeWeapon(me);
@@ -306,6 +310,8 @@ function syncCamera() {
     yaw = me.yaw;
     pitch = me.pitch;
   }
+  // No gun in hand while dead (spectating) or before the match starts.
+  viewmodel.group.visible = me.alive && state.phase !== 'menu';
   shake = Math.max(0, shake - 0.03);
   const shX = (rng() - 0.5) * shake * 0.02;
   const shY = (rng() - 0.5) * shake * 0.02;
@@ -365,12 +371,14 @@ function syncHud(dt) {
   if (me.planting > 0) hud.setProgress('PLANTING CHARGE', me.planting / GAME.plantTime);
   else if (me.defusing > 0) hud.setProgress('DEFUSING CHARGE', me.defusing / GAME.defuseTime);
   else hud.setProgress(null, 0);
-  // Context hint.
+  // Context hint (only while alive — a dead player cannot act on it).
   let hint = '';
-  if (state.phase === 'freeze') hint = 'B — buy menu  ·  freeze ends soon';
-  else if (me.hasBomb) hint = 'You carry the charge — reach A or B, hold E to plant';
-  else if (state.bomb.state === 'planted' && me.team === 'sentinel') hint = 'Charge planted — reach it and hold E to defuse';
-  else if (state.bomb.state === 'dropped') hint = 'Charge dropped — walk over it to pick it up';
+  if (me.alive) {
+    if (state.phase === 'freeze') hint = 'B — buy menu  ·  freeze ends soon';
+    else if (me.hasBomb) hint = 'You carry the charge — reach A or B, hold E to plant';
+    else if (state.bomb.state === 'planted' && me.team === 'sentinel') hint = 'Charge planted — reach it and hold E to defuse';
+    else if (state.bomb.state === 'dropped') hint = 'Charge dropped — walk over it to pick it up';
+  }
   hud.setHint(hint);
   minimapT -= dt;
   if (minimapT <= 0) {
@@ -527,6 +535,7 @@ if (shotMode) {
     showScoreboard() { hud.showScoreboard(state); },
     showOverlay(kind) { hud.showOverlay(kind, { wins: state.wins }); },
     banner(text, sub) { hud.banner(text, sub, null); },
+    hideBanner() { hud.hideBanner(); },
   });
   frozen = true;
 } else {
