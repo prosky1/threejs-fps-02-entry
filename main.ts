@@ -7,7 +7,7 @@
 // Local check:  mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 // Play locally: node serve.ts  (then http://localhost:8080)
 
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-threejs.ts';
@@ -15,8 +15,9 @@ import { buildDossier } from './vendor/makefun-threejs.ts';
 const repo = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-// Start from an empty output directory so a second run cannot inherit stale files.
-rmSync(out, { recursive: true, force: true });
+// The grader guarantees /output starts empty, so just create it (starter
+// behaviour): deleting /output itself fails in the grader sandbox, where the
+// program runs as non-root and /output's parent is not writable.
 mkdirSync(out, { recursive: true });
 
 // The playable game (static ES modules + vendored three.js) and its screenshots.
