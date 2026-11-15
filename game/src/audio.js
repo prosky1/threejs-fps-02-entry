@@ -86,6 +86,8 @@ export function createAudio() {
     smg: { filterFreq: 3000, duration: 0.09, gain: 0.4, thump: 170 },
     rifle: { filterFreq: 1800, duration: 0.14, gain: 0.55, thump: 110 },
     marksman: { filterFreq: 1200, duration: 0.3, gain: 0.8, thump: 70 },
+    shotgun: { filterFreq: 900, duration: 0.2, gain: 0.85, thump: 90 },
+    lmg: { filterFreq: 1500, duration: 0.13, gain: 0.6, thump: 100 },
   };
 
   return {
@@ -97,12 +99,22 @@ export function createAudio() {
     // A quiet dusk wind: a looped, low-passed noise bed with a slow swell.
     // Starts on the first user gesture; nothing plays before it.
     ambient() { startAmbient(); },
-    shot(kind, distance = 0) {
+    // Hearing bus: distance falloff, and a wall between shooter and listener
+    // muffles the shot (lower cutoff + less gain), so a crack nearby reads
+    // very differently from a thump through the warehouse wall.
+    shot(kind, distance = 0, occluded = false) {
       if (!ensure()) return;
       const s = SHOTS[kind] ?? SHOTS.rifle;
       const falloff = 1 / (1 + distance * 0.045);
-      noise({ duration: s.duration, filterFreq: s.filterFreq, gain: s.gain * falloff });
-      tone({ freq: s.thump, freqEnd: 45, duration: 0.1, type: 'triangle', gain: 0.5 * falloff });
+      const muffle = occluded ? 0.38 : 1;
+      noise({ duration: s.duration, filterFreq: s.filterFreq * (occluded ? 0.32 : 1), gain: s.gain * falloff * muffle });
+      tone({ freq: s.thump, freqEnd: 45, duration: 0.1, type: 'triangle', gain: 0.5 * falloff * muffle });
+    },
+    // Short radio blip under a bot callout in the feed.
+    radio() {
+      if (!ensure()) return;
+      tone({ freq: 950, duration: 0.05, type: 'square', gain: 0.1 });
+      tone({ freq: 1250, duration: 0.05, type: 'square', gain: 0.1, when: 0.07 });
     },
     dryFire() { if (ensure()) tone({ freq: 1200, duration: 0.04, type: 'square', gain: 0.12 }); },
     reload() {

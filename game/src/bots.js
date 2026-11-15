@@ -15,16 +15,22 @@ const ATTACK_ROUTES = [
   { site: 'B', via: [16, 15, 23, 13, 12] },
   { site: 'B', via: [17, 18, 21, 23, 13, 12] },
   { site: 'A', via: [17, 18, 19, 22, 4, 5] },
+  // Site C runs straight through mid warehouse (waypoint 18 is the site).
+  { site: 'C', via: [17, 18] },
+  { site: 'C', via: [16, 15, 21, 18] },
+  { site: 'C', via: [1, 2, 20, 18] },
 ];
 const DEFEND_SPOTS = [
   { wp: 5, look: 4 }, { wp: 7, look: 5 }, { wp: 12, look: 13 },
-  { wp: 10, look: 12 }, { wp: 8, look: 19 },
+  { wp: 10, look: 12 }, { wp: 8, look: 19 }, { wp: 18, look: 19 },
 ];
 
 export function botBuy(bot, rng) {
   const money = bot.money;
-  if (money >= 4500 && rng() < 0.25) bot.primary = createWeaponState('marksman');
+  if (money >= 5200 && rng() < 0.2) bot.primary = createWeaponState('lmg');
+  else if (money >= 4500 && rng() < 0.25) bot.primary = createWeaponState('marksman');
   else if (money >= 2700) bot.primary = createWeaponState('rifle');
+  else if (money >= 1800 && rng() < 0.35) bot.primary = createWeaponState('shotgun');
   else if (money >= 1200) bot.primary = createWeaponState('smg');
   else bot.primary = null;
   bot.active = bot.primary ? 'primary' : 'secondary';
@@ -45,7 +51,7 @@ export function assignRoles(state, rng) {
   });
   defenders.forEach((bot, i) => {
     const spot = DEFEND_SPOTS[i % DEFEND_SPOTS.length];
-    bot.bot.site = spot.wp === 5 || spot.wp === 7 ? 'A' : spot.wp === 12 || spot.wp === 10 ? 'B' : null;
+    bot.bot.site = spot.wp === 5 || spot.wp === 7 ? 'A' : spot.wp === 12 || spot.wp === 10 ? 'B' : spot.wp === 18 ? 'C' : null;
     bot.bot.holdWp = spot.wp;
     bot.bot.holdLook = spot.look;
     bot.bot.state = 'advance';
@@ -83,6 +89,17 @@ function setPath(bot, targetWp) {
   bot.bot.pathIndex = 0;
 }
 
+function siteName(x, z) {
+  let best = 'Mid';
+  let bestD = 13;
+  for (const key of Object.keys(SITES)) {
+    const s = SITES[key];
+    const d = Math.hypot(s.x - x, s.z - z);
+    if (d < bestD) { bestD = d; best = key; }
+  }
+  return best;
+}
+
 function think(state, world, bot, rng) {
   const b = bot.bot;
   const planted = state.bomb.state === 'planted';
@@ -101,19 +118,27 @@ function think(state, world, bot, rng) {
       b.reactT = range(rng, BOT.reactionMin, BOT.reactionMax) * (1.3 - b.skill * 0.6);
       b.aimTime = 0;
       b.burstLeft = 0;
+      // Callout: first sight of a new target is radioed to the team
+      // (throttled so the feed is signal, not spam).
+      if (state.time - (b.calloutT ?? -99) > 8) {
+        b.calloutT = state.time;
+        state.events.push({ kind: 'callout', by: bot.id, site: siteName(visible.pos.x, visible.pos.z) });
+      }
     }
     b.lastKnown = { x: visible.pos.x, z: visible.pos.z, t: state.time };
     if (b.state !== 'plant' && b.state !== 'defuse') b.state = 'engage';
     return;
   }
   b.targetId = null;
-  // 2. Hearing: fresh gunfire nearby pulls bots toward it.
+  // 2. Hearing: fresh gunfire nearby pulls bots toward it. A wall between
+  // the shot and the bot halves the hearing radius (muffled through cover).
   if (!planted && b.state !== 'plant' && b.state !== 'defuse') {
     for (let i = state.shots.length - 1; i >= 0; i -= 1) {
       const s = state.shots[i];
       if (s.team === bot.team || state.time - s.t > 3) continue;
       const d = Math.hypot(s.x - bot.pos.x, s.z - bot.pos.z);
-      if (d < BOT.hearRadius) {
+      const occluded = !hasLineOfSight(world.collision, bot.pos.x, bot.pos.y + 1.5, bot.pos.z, s.x, 1.2, s.z);
+      if (d < (occluded ? BOT.hearRadius * 0.5 : BOT.hearRadius)) {
         b.lastKnown = { x: s.x, z: s.z, t: state.time };
         if (b.state === 'hold' || b.state === 'advance') b.state = 'seek';
         break;
@@ -346,8 +371,24 @@ export function createBotSystem(state, world, rng) {
           }
           continue;
         }
-        // Hold: stand and watch. Small idle sway of the aim.
+        // Hold: watch the assigned angle, and peek it: every few seconds
+        // step ~2 m toward the angle and back, so a holder is not a statue
+        // staring at one pixel — it checks the lane, then re-takes cover.
         if (b.state === 'hold') {
+          b.peekT = (b.peekT ?? 3) - dt;
+          const look = WAYPOINTS[b.holdLook];
+          if (look && b.peekT <= 0) {
+            b.peekT = range(rng, 4, 8);
+            b.peekOut = !b.peekOut;
+            const dx = look.x - bot.pos.x;
+            const dz = look.z - bot.pos.z;
+            const dl = Math.hypot(dx, dz) || 1;
+            if (b.peekOut) { b.peekX = bot.pos.x + (dx / dl) * 2; b.peekZ = bot.pos.z + (dz / dl) * 2; }
+            else { b.peekX = WAYPOINTS[b.holdWp].x; b.peekZ = WAYPOINTS[b.holdWp].z; }
+          }
+          if (b.peekOut || (b.peekX !== 0 && Math.hypot(b.peekX - bot.pos.x, b.peekZ - bot.pos.z) > 0.4)) {
+            moveToward(state, world, bot, b.peekX, b.peekZ, dt, 2.6);
+          }
           bot.yaw += Math.sin(state.time * 0.5 + bot.id.charCodeAt(1)) * 0.0009;
         }
       }

@@ -1,7 +1,7 @@
 // Hitscan gunplay: spread grows with movement and sustained fire, shrinks when
 // still, crouched or aiming — stopping to aim pays. Damage falls with range and
 // multiplies on headshots. Grenades are simulated ballistic bodies.
-import { raySphere, rayWalls } from './collision.js';
+import { rayCapsule, raySphere, rayWalls } from './collision.js';
 import { clamp } from './rng.js';
 
 const wallHit = { dist: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0 };
@@ -21,12 +21,31 @@ export function damageAtRange(def, dist, head) {
   return head ? base * def.headMult : base;
 }
 
-// Aim point of a body part in world space (head / chest spheres).
+// Aim point of a body part in world space (head sphere / chest point, for bots).
 export function partPoint(player, part) {
   const crouch = player.crouch ? 0.45 : 0;
   return part === 'head'
-    ? { x: player.pos.x, y: player.pos.y + 1.58 - crouch, z: player.pos.z, r: 0.22 }
-    : { x: player.pos.x, y: player.pos.y + 1.05 - crouch * 0.6, z: player.pos.z, r: 0.42 };
+    ? { x: player.pos.x, y: player.pos.y + 1.58 - crouch, z: player.pos.z, r: 0.24 }
+    : { x: player.pos.x, y: player.pos.y + 1.05 - crouch * 0.6, z: player.pos.z, r: 0.34 };
+}
+
+// Body hitbox: a vertical capsule (hips to shoulders) plus a head sphere.
+// A capsule catches grazing shots a single chest sphere misses and stops
+// shots passing between head and chest spheres from whiffing.
+export function bodyCapsule(player) {
+  const c = player.crouch ? 1 : 0;
+  return {
+    ax: player.pos.x, ay: player.pos.y + 0.72 - c * 0.22, az: player.pos.z,
+    bx: player.pos.x, by: player.pos.y + 1.38 - c * 0.42, bz: player.pos.z, r: 0.34,
+  };
+}
+
+// Deterministic recoil step for the Nth shot of a spray (0-based): the
+// pattern in config.js, so a spray climbs a learnable path.
+export function patternKick(def, shotN) {
+  const pat = def.pattern;
+  if (!pat || !pat.length) return [def.recoil, 0];
+  return pat[shotN % pat.length];
 }
 
 // One hitscan bullet. Returns {hit:'wall'|'player'|null, victim, part, dist, point}.
@@ -38,15 +57,16 @@ export function resolveShot(world, shooter, origin, dir, def, players, out) {
   let part = null;
   for (const p of players) {
     if (p === shooter || !p.alive) continue;
-    for (const candidate of ['head', 'body']) {
-      const pt = partPoint(p, candidate);
-      const d = raySphere(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, pt.x, pt.y, pt.z, pt.r, bestDist);
-      if (d < bestDist) {
-        bestDist = d;
-        victim = p;
-        part = candidate;
-      }
-    }
+    const head = partPoint(p, 'head');
+    const dh = raySphere(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, head.x, head.y, head.z, head.r, bestDist);
+    const cap = bodyCapsule(p);
+    const db = rayCapsule(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z,
+      cap.ax, cap.ay, cap.az, cap.bx, cap.by, cap.bz, cap.r, bestDist);
+    // The capsule's top cap overlaps the head sphere (neck region): a ray
+    // through the head must count as a headshot, so the head wins when its
+    // surface is within 0.15 m of the capsule's along the ray.
+    if (dh < Infinity && dh <= db + 0.15 && dh < bestDist) { bestDist = dh; victim = p; part = 'head'; }
+    else if (db < bestDist) { bestDist = db; victim = p; part = 'body'; }
   }
   out.dist = bestDist;
   out.point.x = origin.x + dir.x * bestDist;
@@ -89,6 +109,13 @@ export function stepWeapon(w, def, dt) {
     }
   }
   w.bloom = Math.max(0, w.bloom - dt * 0.05);
+  // Spray pattern resets after 0.6s without a shot.
+  if (w.cooldown <= 0 && w.reloading <= 0) {
+    w.idleT = (w.idleT ?? 0) + dt;
+    if (w.idleT > 0.6) w.shotN = 0;
+  } else {
+    w.idleT = 0;
+  }
 }
 
 export function tryFire(w, def) {
@@ -97,6 +124,8 @@ export function tryFire(w, def) {
   w.mag -= 1;
   w.cooldown = 1 / def.fireRate;
   w.bloom = Math.min(def.bloomMax, w.bloom + def.bloom);
+  w.shotN = (w.shotN ?? 0) + 1;
+  w.idleT = 0;
   return 'fired';
 }
 

@@ -95,6 +95,47 @@ export function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r, maxDist) {
   return t >= 0 && t <= maxDist ? t : Infinity;
 }
 
+// Ray vs capsule (axis segment a-b, radius r): the body hitbox. Closest points
+// between the ray segment and the capsule axis (Ericson, segment-segment);
+// a hit is when that distance is under r, pulled back by the cap depth.
+export function rayCapsule(ox, oy, oz, dx, dy, dz, ax, ay, az, bx, by, bz, r, maxDist) {
+  const p1 = [ox, oy, oz];
+  const q1 = [ox + dx * maxDist, oy + dy * maxDist, oz + dz * maxDist];
+  const p2 = [ax, ay, az];
+  const q2 = [bx, by, bz];
+  const d1 = [q1[0] - p1[0], q1[1] - p1[1], q1[2] - p1[2]];
+  const d2 = [q2[0] - p2[0], q2[1] - p2[1], q2[2] - p2[2]];
+  const r0 = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const a = dot(d1, d1);
+  const e = dot(d2, d2);
+  const f = dot(d2, r0);
+  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  let s;
+  let t;
+  if (a <= 1e-12 && e <= 1e-12) { s = 0; t = 0; }
+  else if (a <= 1e-12) { s = 0; t = clamp01(f / e); }
+  else {
+    const c = dot(d1, r0);
+    if (e <= 1e-12) { t = 0; s = clamp01(-c / a); }
+    else {
+      const b = dot(d1, d2);
+      const denom = a * e - b * b;
+      s = denom > 1e-12 ? clamp01((b * f - c * e) / denom) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = clamp01(-c / a); }
+      else if (t > 1) { t = 1; s = clamp01((b - c) / a); }
+    }
+  }
+  const cx = p1[0] + d1[0] * s - (p2[0] + d2[0] * t);
+  const cy = p1[1] + d1[1] * s - (p2[1] + d2[1] * t);
+  const cz = p1[2] + d1[2] * s - (p2[2] + d2[2] * t);
+  const d2v = cx * cx + cy * cy + cz * cz;
+  if (d2v > r * r) return Infinity;
+  const hit = s * maxDist - Math.sqrt(r * r - d2v);
+  return hit >= 0 && hit <= maxDist ? hit : Infinity;
+}
+
 // Line of sight between two points: true when no wall blocks the segment.
 export function hasLineOfSight(collision, ax, ay, az, bx, by, bz) {
   const dx = bx - ax;

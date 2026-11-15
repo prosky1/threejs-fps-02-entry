@@ -77,6 +77,9 @@ for (const [a, b] of EDGES) { GRAPH[a].push(b); GRAPH[b].push(a); }
 export const SITES = {
   A: { x: 30, z: -18, r: 6.5, label: 'A' },
   B: { x: 30, z: 18, r: 6.5, label: 'B' },
+  // Site C: inside the mid warehouse (doors on all four sides), so the
+  // rotation is A/B/C and mid control matters every round.
+  C: { x: 0, z: 0, r: 5.5, label: 'C' },
 };
 export const SPAWNS = {
   vanguard: [-4, -2, 0, 2, 4].map((z) => ({ x: -44, z, yaw: -Math.PI / 2 })),
@@ -377,19 +380,21 @@ export function buildMap(scene) {
   scene.add(ground);
 
   // Site rings + floating letters + painted ground letters.
-  for (const key of ['A', 'B']) {
+  const SITE_COLORS = { A: 0xf0a830, B: 0x4fc3f7, C: 0x7ee787 };
+  const SITE_CSS = { A: '#f0a830', B: '#4fc3f7', C: '#7ee787' };
+  for (const key of Object.keys(SITES)) {
     const site = SITES[key];
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(site.r - 0.35, site.r, 48),
-      new THREE.MeshBasicMaterial({ color: key === 'A' ? 0xf0a830 : 0x4fc3f7, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color: SITE_COLORS[key], transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(site.x, 0.03, site.z);
     scene.add(ring);
-    const letter = letterSprite(key, key === 'A' ? '#f0a830' : '#4fc3f7');
+    const letter = letterSprite(key, SITE_CSS[key]);
     letter.position.set(site.x, 5.2, site.z);
     scene.add(letter);
-    const decal = groundLetter(key, key === 'A' ? 'rgba(240,168,48,0.8)' : 'rgba(79,195,247,0.8)');
+    const decal = groundLetter(key, key === 'A' ? 'rgba(240,168,48,0.8)' : key === 'B' ? 'rgba(79,195,247,0.8)' : 'rgba(126,231,135,0.8)');
     decal.position.set(site.x, 0.02, site.z);
     scene.add(decal);
   }

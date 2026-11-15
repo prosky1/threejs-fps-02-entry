@@ -1,4 +1,4 @@
-// Boot + the one loop: a fixed 60 Hz simulation feeding a render at the
+// Boot + the one loop: a fixed 120 Hz simulation feeding a render at the
 // display's rate. This file is glue only — systems live in their own modules.
 // ?shot=start|buy|play|end&seed=N runs a deterministic capture instead.
 import * as THREE from 'three';
@@ -6,7 +6,7 @@ import { GAME, WEAPONS } from './config.js';
 import { createState, human, applyDamage, activeWeapon, playerById } from './state.js';
 import { buildMap, WAYPOINTS, GRAPH } from './map.js';
 import { hasLineOfSight } from './collision.js';
-import { computeSpread, makeShotResult, resolveShot, stepWeapon, tryFire, tryReload, throwGrenade, stepGrenades } from './weapons.js';
+import { computeSpread, makeShotResult, patternKick, resolveShot, stepWeapon, tryFire, tryReload, throwGrenade, stepGrenades } from './weapons.js';
 import { createPlayerController } from './player.js';
 import { createInput } from './input.js';
 import { createBotSystem, createBotMesh, drawNameplate } from './bots.js';
@@ -18,7 +18,7 @@ import { createViewmodel, createEffects } from './viewmodel.js';
 import { createAutopilot, runShot } from './shots.js';
 import { mulberry32 } from './rng.js';
 
-const FIXED_STEP = 1 / 60;
+const FIXED_STEP = 1 / 120;
 const params = new URLSearchParams(window.location.search);
 const shotMode = params.get('shot');
 const seed = Number.parseInt(params.get('seed') ?? '1', 10) || 1;
@@ -145,25 +145,32 @@ function damage(victim, amount, part, attacker) {
 }
 
 function fireBullet(shooter, origin, dir, def, spread) {
-  const rx = (rng() * 2 - 1) * spread;
-  const ry = (rng() * 2 - 1) * spread;
-  const rz = (rng() * 2 - 1) * spread;
-  const d = { x: dir.x + rx, y: dir.y + ry, z: dir.z + rz };
-  const len = Math.hypot(d.x, d.y, d.z) || 1;
-  d.x /= len; d.y /= len; d.z /= len;
-  resolveShot(world, shooter, origin, d, def, state.players, shotResult);
-  effects.tracer(origin, shotResult.point);
-  state.shots.push({ x: shooter.pos.x, z: shooter.pos.z, t: state.time, team: shooter.team });
-  if (shotResult.hit === 'player') {
-    damage(shotResult.victim, shotResult.damage, shotResult.part, shooter);
-    if (shooter === me) {
-      hud.hitmarker(shotResult.part === 'head');
-      audio.hitmarker(shotResult.part === 'head');
+  // One trigger pull = def.pellets (1 for most guns, 8 for the shotgun):
+  // each pellet is its own hitscan ray with its own spread jitter.
+  const pellets = def.pellets ?? 1;
+  let first = null;
+  for (let n = 0; n < pellets; n += 1) {
+    const rx = (rng() * 2 - 1) * spread;
+    const ry = (rng() * 2 - 1) * spread;
+    const rz = (rng() * 2 - 1) * spread;
+    const d = { x: dir.x + rx, y: dir.y + ry, z: dir.z + rz };
+    const len = Math.hypot(d.x, d.y, d.z) || 1;
+    d.x /= len; d.y /= len; d.z /= len;
+    resolveShot(world, shooter, origin, d, def, state.players, shotResult);
+    effects.tracer(origin, shotResult.point);
+    state.shots.push({ x: shooter.pos.x, z: shooter.pos.z, t: state.time, team: shooter.team });
+    if (shotResult.hit === 'player') {
+      damage(shotResult.victim, shotResult.damage, shotResult.part, shooter);
+      if (shooter === me) {
+        hud.hitmarker(shotResult.part === 'head');
+        audio.hitmarker(shotResult.part === 'head');
+      }
+    } else if (shotResult.hit === 'wall') {
+      effects.sparksAt(shotResult.point, { x: shotResult.nx, y: shotResult.ny, z: shotResult.nz });
     }
-  } else if (shotResult.hit === 'wall') {
-    effects.sparksAt(shotResult.point, { x: shotResult.nx, y: shotResult.ny, z: shotResult.nz });
+    if (!first) first = shotResult;
   }
-  return shotResult;
+  return first;
 }
 
 const botCtx = {
@@ -182,7 +189,9 @@ const botCtx = {
     fireBullet(bot, origin, dir, def, spread);
     bot.flashT = 0.07;
     const dist = Math.hypot(me.pos.x - bot.pos.x, me.pos.z - bot.pos.z);
-    audio.shot(def.sound, dist);
+    // Wall between the shot and the player muffles it (hearing bus).
+    const occluded = !hasLineOfSight(world.collision, origin.x, origin.y, origin.z, me.pos.x, me.pos.y + 1.62, me.pos.z);
+    audio.shot(def.sound, dist, occluded);
   },
   onPlant(bot, site) { plantBomb(state, bot, site); },
   onDefuse(bot) { defuseBomb(state, bot); },
@@ -199,7 +208,10 @@ function playerShoot() {
   camera.getWorldDirection(dir);
   const spread = computeSpread(def, controller.speed(), me.crouch, me.ads, w.bloom);
   fireBullet(me, eyeOf(me), { x: dir.x, y: dir.y, z: dir.z }, def, spread);
-  controller.recoil(def.recoil * (0.8 + rng() * 0.4), (rng() * 2 - 1) * def.recoil * 0.5);
+  // Recoil follows the weapon's pattern, not a random kick: shot N of a
+  // spray climbs by pattern[N], so pulling down along the pattern controls it.
+  const [pitchKick, yawKick] = patternKick(def, w.shotN - 1);
+  controller.recoil(pitchKick * (0.9 + rng() * 0.2), yawKick * (0.9 + rng() * 0.2));
   viewmodel.kick(def.kick * 0.35);
   audio.shot(def.sound, 0);
 }
@@ -302,6 +314,12 @@ function drainEvents() {
     } else if (e.kind === 'defuseStart') {
       const defuser = playerById(state, e.by);
       if (defuser) pushFeed(`${defuser.name}: Defusing the charge!`, 'sentinel');
+    } else if (e.kind === 'callout') {
+      const caller = playerById(state, e.by);
+      if (caller) {
+        pushFeed(`${caller.name}: Contact at ${e.site} — eyes on it`, caller.team);
+        audio.radio();
+      }
     } else if (e.kind === 'defuse') hud.banner('CHARGE DEFUSED', 'Sentinel holds the site', 'sentinel');
     else if (e.kind === 'explode') {
       audio.explosion();
@@ -489,10 +507,10 @@ function handlePressed() {
       continue;
     }
     if (hud.isBuyOpen()) {
-      const buyKeys = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'];
+      const buyKeys = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'];
       const idx = buyKeys.indexOf(code);
       if (idx !== -1) {
-        const ids = ['smg', 'rifle', 'marksman', 'frag', 'smoke', 'armor'];
+        const ids = ['smg', 'shotgun', 'rifle', 'marksman', 'lmg', 'frag', 'smoke', 'armor'];
         if (buyItem(state, me, ids[idx])) hud.showBuy(me.money);
         else audio.denied();
       }
@@ -541,12 +559,12 @@ function frame(now) {
     handlePressed();
     accumulator += dt;
     let steps = 0;
-    while (accumulator >= FIXED_STEP && steps < 5) {
+    while (accumulator >= FIXED_STEP && steps < 10) {
       stepFixed(FIXED_STEP);
       accumulator -= FIXED_STEP;
       steps += 1;
     }
-    if (accumulator > FIXED_STEP * 5) accumulator = 0;
+    if (accumulator > FIXED_STEP * 10) accumulator = 0;
     drainEvents();
     syncCamera();
     syncMeshes(dt);

@@ -13,7 +13,7 @@ const BOT_NAMES = [
 
 export function createWeaponState(id) {
   const def = WEAPONS[id];
-  return { id, mag: def.mag, reserve: def.reserve, reloading: 0, cooldown: 0, bloom: 0 };
+  return { id, mag: def.mag, reserve: def.reserve, reloading: 0, cooldown: 0, bloom: 0, shotN: 0, idleT: 0 };
 }
 
 export function createPlayer(id, name, team, isPlayer, spawn) {
@@ -36,6 +36,7 @@ export function createPlayer(id, name, team, isPlayer, spawn) {
       aimAt: null, aimTime: 0, reactT: 0, burstLeft: 0, burstPause: 0,
       holdUntil: 0, lastKnown: null, stuckT: 0, lastPos: { x: spawn.x, z: spawn.z },
       skill: 0.5, site: null, route: null, thinkT: 0,
+      calloutT: 0, peekT: 3, peekOut: false, peekX: 0, peekZ: 0,
     },
     // Render-only scratch, written by the renderer, never read by the sim.
     mesh: null, flashT: 0, hurtT: 0, deadT: 0,

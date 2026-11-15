@@ -7,11 +7,13 @@ function el(id) { return document.getElementById(id); }
 
 const BUY_ITEMS = [
   { key: '1', id: 'smg', label: 'VK-9 Ripper SMG', price: 1200 },
-  { key: '2', id: 'rifle', label: 'AR-77 Longshot', price: 2700 },
-  { key: '3', id: 'marksman', label: 'LANCE-7 Marksman', price: 4500 },
-  { key: '4', id: 'frag', label: 'Frag Grenade', price: 300 },
-  { key: '5', id: 'smoke', label: 'Smoke Grenade', price: 300 },
-  { key: '6', id: 'armor', label: 'Kevlar + Helmet', price: 650 },
+  { key: '2', id: 'shotgun', label: 'SG-12 Breacher', price: 1800 },
+  { key: '3', id: 'rifle', label: 'AR-77 Longshot', price: 2700 },
+  { key: '4', id: 'marksman', label: 'LANCE-7 Marksman', price: 4500 },
+  { key: '5', id: 'lmg', label: 'HK-21 Bulwark LMG', price: 5200 },
+  { key: '6', id: 'frag', label: 'Frag Grenade', price: 300 },
+  { key: '7', id: 'smoke', label: 'Smoke Grenade', price: 300 },
+  { key: '8', id: 'armor', label: 'Kevlar + Helmet', price: 650 },
 ];
 
 export function createHud() {
@@ -210,9 +212,10 @@ export function createHud() {
       for (const b of world.boxes) {
         mctx.fillRect(X(b.min[0]), Z(b.min[2]), (b.max[0] - b.min[0]) * sx, (b.max[2] - b.min[2]) * sy);
       }
-      for (const key of ['A', 'B']) {
+      const SITE_COLORS = { A: '#f0a830', B: '#4fc3f7', C: '#7ee787' };
+      for (const key of Object.keys(SITES)) {
         const site = SITES[key];
-        mctx.fillStyle = key === 'A' ? '#f0a830' : '#4fc3f7';
+        mctx.fillStyle = SITE_COLORS[key];
         mctx.beginPath();
         mctx.arc(X(site.x), Z(site.z), 5, 0, Math.PI * 2);
         mctx.fill();

@@ -72,7 +72,7 @@ export function createAutopilot(state) {
 // when done. The banner is hidden for play/end frames: it is driven by wall
 // time, so in the frozen capture it would otherwise sit over the action.
 export function runShot(name, api) {
-  const STEP = 1 / 60;
+  const STEP = 1 / 120;
   if (name === 'start') {
     // Face north-west so the setting sun sits beside the menu panel, not
     // behind it: sky, sun glow and the yard in one frame.
@@ -88,7 +88,7 @@ export function runShot(name, api) {
     // 10s of autopilot: the player reaches mid / Site A and fights the
     // defenders holding it, so the frame has enemies, tracers and the site.
     // (14s let the pistol-armed autopilot walk into a crossfire and die.)
-    for (let i = 0; i < 60 * 10; i += 1) api.stepFixed(STEP, true);
+    for (let i = 0; i < 120 * 10; i += 1) api.stepFixed(STEP, true);
     api.coolFlash();
     api.syncAll();
     api.hideBanner();
@@ -97,11 +97,11 @@ export function runShot(name, api) {
     api.skipFreeze();
     // Play the round out for real (cap 115s of sim) until it ends.
     let guard = 0;
-    while (api.phase() === 'live' && guard < 60 * 115) {
+    while (api.phase() === 'live' && guard < 120 * 115) {
       api.stepFixed(STEP, true);
       guard += 1;
     }
-    for (let i = 0; i < 60; i += 1) api.stepFixed(STEP, false);
+    for (let i = 0; i < 120; i += 1) api.stepFixed(STEP, false);
     api.coolFlash();
     api.syncAll();
     api.hideBanner();

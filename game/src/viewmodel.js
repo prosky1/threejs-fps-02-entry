@@ -58,6 +58,34 @@ function makeGun(id) {
     box(0.02, 0.06, 0.02, dark, 0, 0.08, -0.5);
     box(0.095, 0.02, 0.2, accent, 0, 0.045, -0.05);
     muzzle = -0.72;
+  } else if (id === 'shotgun') {
+    // Pump shotgun: wide double barrels, pump grip, heat shield.
+    box(0.1, 0.12, 0.4, dark, 0, 0, 0);
+    tube(0.028, 0.5, dark, -0.03, 0.02, -0.42);
+    tube(0.028, 0.5, dark, 0.03, 0.02, -0.42);
+    box(0.09, 0.05, 0.3, dark, 0, 0.07, -0.3);
+    box(0.07, 0.09, 0.16, grip, 0, -0.03, -0.28);
+    box(0.07, 0.16, 0.09, dark, 0, -0.13, -0.02, 0.12);
+    box(0.08, 0.11, 0.2, grip, 0, -0.01, 0.3);
+    box(0.105, 0.02, 0.2, accent, 0, 0.045, -0.05);
+    muzzle = -0.68;
+  } else if (id === 'lmg') {
+    // LMG: long heavy barrel, drum mag, carry handle, bipod.
+    box(0.1, 0.14, 0.5, dark, 0, 0, 0);
+    tube(0.024, 0.6, dark, 0, 0.015, -0.5);
+    tube(0.04, 0.24, dark, 0, 0.11, -0.1);
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.07, 12), dark);
+    drum.rotation.z = Math.PI / 2;
+    drum.position.set(0, -0.13, -0.05);
+    g.add(drum);
+    box(0.08, 0.06, 0.26, dark, 0, 0.1, -0.05);
+    box(0.08, 0.12, 0.22, grip, 0, -0.01, 0.32);
+    const bipodL = box(0.02, 0.02, 0.2, dark, -0.05, -0.09, -0.4, 0.5);
+    bipodL.rotation.z = 0.5;
+    const bipodR = box(0.02, 0.02, 0.2, dark, 0.05, -0.09, -0.4, 0.5);
+    bipodR.rotation.z = -0.5;
+    box(0.105, 0.02, 0.2, accent, 0, 0.05, -0.05);
+    muzzle = -0.82;
   } else { // marksman
     box(0.09, 0.12, 0.5, dark, 0, 0, 0);
     tube(0.024, 0.7, dark, 0, 0.015, -0.58);
@@ -80,7 +108,7 @@ function makeGun(id) {
 export function createViewmodel(camera) {
   const group = new THREE.Group();
   const guns = {};
-  for (const id of ['pistol', 'smg', 'rifle', 'marksman']) {
+  for (const id of ['pistol', 'smg', 'shotgun', 'rifle', 'lmg', 'marksman']) {
     const built = makeGun(id);
     built.group.visible = id === 'pistol';
     group.add(built.group);

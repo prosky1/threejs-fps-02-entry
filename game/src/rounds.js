@@ -213,7 +213,7 @@ export function stepInteract(state, player, holdingE, dt) {
     return;
   }
   if (player.hasBomb && state.bomb.state === 'carried') {
-    for (const key of ['A', 'B']) {
+    for (const key of ['A', 'B', 'C']) {
       const site = SITES[key];
       if (Math.hypot(site.x - player.pos.x, site.z - player.pos.z) < site.r) {
         player.planting += dt;
